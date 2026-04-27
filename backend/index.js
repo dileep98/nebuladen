@@ -43,10 +43,15 @@ app.use("/agent", verifyToken, agentRoutes);
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 
-// Upgrade HTTP to WebSocket
 server.on("upgrade", (request, socket, head) => {
-  const { query } = url.parse(request.url, true);
-  const token = query.token;
+  const parsedUrl = url.parse(request.url, true);
+  const token = parsedUrl.query.token;
+  const pathname = parsedUrl.pathname;
+
+  if (pathname !== "/ws") {
+    socket.destroy();
+    return;
+  }
 
   if (!token) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
