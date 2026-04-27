@@ -2,17 +2,32 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const { randomUUID: uuidv4 } = require("crypto");
 const { signToken } = require("../middleware/auth");
+const fs = require("fs");
+const path = require("path");
 
 const router = express.Router();
 
-// In-memory user store (we'll move to DynamoDB later)
-const users = {};
+// File-based user store
+const DB_PATH = path.join(__dirname, "../db.json");
+
+function loadUsers() {
+  if (!fs.existsSync(DB_PATH)) {
+    fs.writeFileSync(DB_PATH, JSON.stringify({}));
+  }
+  return JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+}
+
+function saveUsers(users) {
+  fs.writeFileSync(DB_PATH, JSON.stringify(users, null, 2));
+}
 
 router.post("/signup", async (req, res) => {
   const { name, email, password } = req.body;
 
   if (!name || !email || !password)
     return res.status(400).json({ message: "All fields are required" });
+
+  const users = loadUsers();
 
   if (users[email])
     return res.status(400).json({ message: "Email already in use" });
@@ -24,6 +39,7 @@ router.post("/signup", async (req, res) => {
   const id = uuidv4();
 
   users[email] = { id, name, email, password: hashed, createdAt: new Date() };
+  saveUsers(users);
 
   const token = signToken({ id, name, email });
   res.json({ token, user: { id, name, email } });
@@ -35,7 +51,9 @@ router.post("/login", async (req, res) => {
   if (!email || !password)
     return res.status(400).json({ message: "All fields are required" });
 
+  const users = loadUsers();
   const user = users[email];
+
   if (!user)
     return res.status(400).json({ message: "Invalid email or password" });
 
