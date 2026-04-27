@@ -17,7 +17,10 @@ const server = http.createServer(app);
 // WebSocket server
 const wss = new WebSocket.Server({ noServer: true });
 
-app.use(cors({ origin: "*", credentials: true }));
+app.use(cors({ 
+  origin: ["http://localhost:3000", "https://nebuladen.vercel.app"],
+  credentials: true 
+}));
 app.use(express.json());
 
 // Global rate limit — 100 requests per 15 minutes per IP
@@ -46,6 +49,7 @@ server.on("upgrade", (request, socket, head) => {
   const token = query.token;
 
   if (!token) {
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
   }
@@ -57,6 +61,7 @@ server.on("upgrade", (request, socket, head) => {
       wss.emit("connection", ws, request);
     });
   } catch {
+    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
   }
 });
