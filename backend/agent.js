@@ -4,9 +4,46 @@ const Anthropic = require("@anthropic-ai/sdk");
 // Track sessions per user
 const sessions = {};
 
+// Track message counts per user (resets daily)
+const messageCounts = {};
+const DAILY_MESSAGE_LIMIT = 50;
+const MESSAGE_COOLDOWN_MS = 3000; // 3 seconds between messages
+
+function getDayKey() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function checkRateLimit(userId) {
+  const dayKey = getDayKey();
+  if (!messageCounts[userId]) {
+    messageCounts[userId] = { count: 0, day: dayKey, lastMessage: 0 };
+  }
+
+  // Reset count if it's a new day
+  if (messageCounts[userId].day !== dayKey) {
+    messageCounts[userId] = { count: 0, day: dayKey, lastMessage: 0 };
+  }
+
+  const now = Date.now();
+  const timeSinceLast = now - messageCounts[userId].lastMessage;
+
+  // Check cooldown
+  if (timeSinceLast < MESSAGE_COOLDOWN_MS) {
+    return { allowed: false, reason: `Please wait ${Math.ceil((MESSAGE_COOLDOWN_MS - timeSinceLast) / 1000)} seconds before sending another message.` };
+  }
+
+  // Check daily limit
+  if (messageCounts[userId].count >= DAILY_MESSAGE_LIMIT) {
+    return { allowed: false, reason: `You've reached your daily limit of ${DAILY_MESSAGE_LIMIT} messages. Limit resets at midnight UTC.` };
+  }
+
+  messageCounts[userId].count++;
+  messageCounts[userId].lastMessage = now;
+  return { allowed: true };
+}
+
 async function handleAgentConnection(ws, user) {
   console.log(`Agent connected for user: ${user.name}`);
-
   sessions[user.id] = { ws, user, history: [] };
 
   ws.on("message", async (data) => {
@@ -14,11 +51,21 @@ async function handleAgentConnection(ws, user) {
       const { command, mode } = JSON.parse(data);
       const session = sessions[user.id];
 
+      // Check rate limit
+      const rateCheck = checkRateLimit(user.id);
+      if (!rateCheck.allowed) {
+        ws.send(JSON.stringify({ output: `⚠️ ${rateCheck.reason}`, type: "error" }));
+        return;
+      }
+
       session.history.push({ role: "user", content: command });
-
       const output = await runAgent(command, session.history, mode);
-
       session.history.push({ role: "assistant", content: output });
+
+      // Keep history to last 20 messages to save tokens
+      if (session.history.length > 20) {
+        session.history = session.history.slice(-20);
+      }
 
       ws.send(JSON.stringify({ output, type: "response" }));
     } catch (err) {
@@ -31,34 +78,29 @@ async function handleAgentConnection(ws, user) {
     delete sessions[user.id];
   });
 
-  // Send welcome message
   ws.send(JSON.stringify({
-    output: `Good ${getTimeOfDay()}, ${user.name}! I'm your Nebula agent running on a cloud machine. What shall we build today?`,
+    output: `Good ${getTimeOfDay()}, ${user.name}! I'm your Nebula agent running on a cloud machine. What shall we build today?\n\n_Daily limit: ${DAILY_MESSAGE_LIMIT} messages_`,
     type: "welcome",
   }));
 }
 
 async function runAgent(command, history, mode) {
-  // Check if it's a shell command (starts with $ or "run:")
   if (command.startsWith("$ ") || command.toLowerCase().startsWith("run:")) {
     const cmd = command.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
     return await executeShell(cmd);
   }
 
-  // Otherwise use Claude as the brain
   try {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
     const response = await client.messages.create({
       model: mode === "fast" ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-6",
       max_tokens: 1024,
-      system: `You are Nebula, an AI agent running on a dedicated cloud machine (AWS EC2 t2.micro, Ubuntu). 
+      system: `You are Nebula, an AI agent running on a dedicated cloud machine (AWS EC2 t3.micro, Ubuntu). 
 You help users by executing tasks, writing code, managing files, and answering questions.
 When a user asks you to run something, prefix the command with $ and explain what it does.
 Be concise, practical, and technical. You have access to a real Linux terminal.`,
       messages: history,
     });
-
     return response.content[0].text;
   } catch (err) {
     return `I'm having trouble connecting to my brain right now. Error: ${err.message}`;
@@ -67,13 +109,11 @@ Be concise, practical, and technical. You have access to a real Linux terminal.`
 
 function executeShell(command) {
   return new Promise((resolve) => {
-    // Safety: block dangerous commands
     const blocked = ["rm -rf /", "mkfs", "dd if=", ":(){:|:&};:"];
     if (blocked.some((b) => command.includes(b))) {
       resolve("⚠️ That command is blocked for safety reasons.");
       return;
     }
-
     exec(command, { timeout: 10000 }, (error, stdout, stderr) => {
       if (error) {
         resolve(`Error:\n${stderr || error.message}`);

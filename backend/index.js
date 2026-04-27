@@ -3,6 +3,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const cors = require("cors");
 const url = require("url");
+const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 
 const authRoutes = require("./routes/auth");
@@ -16,11 +17,25 @@ const server = http.createServer(app);
 // WebSocket server
 const wss = new WebSocket.Server({ noServer: true });
 
-app.use(cors({ origin: "http://localhost:3000", credentials: true }));
+app.use(cors({ origin: "*", credentials: true }));
 app.use(express.json());
 
-// Routes
-app.use("/auth", authRoutes);
+// Global rate limit — 100 requests per 15 minutes per IP
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: { message: "Too many requests, please try again later." },
+});
+
+// Auth rate limit — 10 attempts per 15 minutes per IP
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { message: "Too many login attempts, please try again later." },
+});
+
+app.use(globalLimiter);
+app.use("/auth", authLimiter, authRoutes);
 app.use("/agent", verifyToken, agentRoutes);
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
