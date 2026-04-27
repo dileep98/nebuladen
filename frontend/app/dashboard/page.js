@@ -34,7 +34,7 @@ export default function Dashboard() {
         router.push("/login");
       }
     })();
-  }, [router]);
+  }, []);
 
   function handleLogout() {
     localStorage.removeItem("token");
