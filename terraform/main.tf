@@ -28,7 +28,7 @@ variable "instance_type" {
 variable "key_name" {
   description = "Name of the SSH key pair"
   type        = string
-  default     = "nebuladen-key"
+  default     = "nebuladen-key-v2"
 }
 
 variable "allowed_ssh_cidr" {
