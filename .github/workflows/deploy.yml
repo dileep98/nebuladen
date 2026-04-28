@@ -21,4 +21,13 @@ jobs:
             cd backend
             npm install
             pm2 restart nebuladen-backend
-            echo "Deployed successfully!"
+            echo "Waiting for server to start..."
+            sleep 5
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed! Backend is running."
+            else
+              echo "Health check FAILED! Status: $STATUS"
+              pm2 logs nebuladen-backend --lines 20
+              exit 1
+            fi
