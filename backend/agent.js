@@ -1,13 +1,15 @@
 const { exec } = require("child_process");
 const Anthropic = require("@anthropic-ai/sdk");
+const { logActivity } = require("./metrics");
 
-// Track sessions per user
 const sessions = {};
-
-// Track message counts per user (resets daily)
 const messageCounts = {};
 const DAILY_MESSAGE_LIMIT = 50;
-const MESSAGE_COOLDOWN_MS = 3000; // 3 seconds between messages
+const MESSAGE_COOLDOWN_MS = 3000;
+
+function getSessions() {
+  return sessions;
+}
 
 function getDayKey() {
   return new Date().toISOString().split("T")[0];
@@ -18,25 +20,17 @@ function checkRateLimit(userId) {
   if (!messageCounts[userId]) {
     messageCounts[userId] = { count: 0, day: dayKey, lastMessage: 0 };
   }
-
-  // Reset count if it's a new day
   if (messageCounts[userId].day !== dayKey) {
     messageCounts[userId] = { count: 0, day: dayKey, lastMessage: 0 };
   }
-
   const now = Date.now();
   const timeSinceLast = now - messageCounts[userId].lastMessage;
-
-  // Check cooldown
   if (timeSinceLast < MESSAGE_COOLDOWN_MS) {
     return { allowed: false, reason: `Please wait ${Math.ceil((MESSAGE_COOLDOWN_MS - timeSinceLast) / 1000)} seconds before sending another message.` };
   }
-
-  // Check daily limit
   if (messageCounts[userId].count >= DAILY_MESSAGE_LIMIT) {
     return { allowed: false, reason: `You've reached your daily limit of ${DAILY_MESSAGE_LIMIT} messages. Limit resets at midnight UTC.` };
   }
-
   messageCounts[userId].count++;
   messageCounts[userId].lastMessage = now;
   return { allowed: true };
@@ -46,12 +40,13 @@ async function handleAgentConnection(ws, user) {
   console.log(`Agent connected for user: ${user.name}`);
   sessions[user.id] = { ws, user, history: [] };
 
+  logActivity(user.id, "connect", "Agent session started");
+
   ws.on("message", async (data) => {
     try {
       const { command, mode } = JSON.parse(data);
       const session = sessions[user.id];
 
-      // Check rate limit
       const rateCheck = checkRateLimit(user.id);
       if (!rateCheck.allowed) {
         ws.send(JSON.stringify({ output: `⚠️ ${rateCheck.reason}`, type: "error" }));
@@ -59,10 +54,18 @@ async function handleAgentConnection(ws, user) {
       }
 
       session.history.push({ role: "user", content: command });
+
+      // Log the activity
+      if (command.startsWith("$ ") || command.toLowerCase().startsWith("run:")) {
+        const cmd = command.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
+        logActivity(user.id, "shell", `Ran: ${cmd}`);
+      } else {
+        logActivity(user.id, "chat", command.slice(0, 60) + (command.length > 60 ? "..." : ""));
+      }
+
       const output = await runAgent(command, session.history, mode);
       session.history.push({ role: "assistant", content: output });
 
-      // Keep history to last 20 messages to save tokens
       if (session.history.length > 20) {
         session.history = session.history.slice(-20);
       }
@@ -75,6 +78,7 @@ async function handleAgentConnection(ws, user) {
 
   ws.on("close", () => {
     console.log(`Agent disconnected for user: ${user.name}`);
+    logActivity(user.id, "disconnect", "Agent session ended");
     delete sessions[user.id];
   });
 
@@ -89,7 +93,6 @@ async function runAgent(command, history, mode) {
     const cmd = command.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
     return await executeShell(cmd);
   }
-
   try {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const response = await client.messages.create({
@@ -131,4 +134,4 @@ function getTimeOfDay() {
   return "evening";
 }
 
-module.exports = { handleAgentConnection };
+module.exports = { handleAgentConnection, getSessions };

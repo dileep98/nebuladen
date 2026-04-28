@@ -5,8 +5,8 @@
 NebulaDen is an AI agent platform where every user gets a personal AI agent ("Nebula") backed by a real AWS cloud machine. Chat with your agent, give it tasks, and watch it execute — all in real time.
 
 ## Live Demo
-- **Frontend:** [coming soon]
-- **Backend Health:** http://50.17.232.178:4000/health
+- **Frontend:** https://nebuladen.vercel.app
+- **Backend:** https://nebuladen.duckdns.org
 
 ## Features
 - 🤖 Personal AI agent powered by Claude (Anthropic)

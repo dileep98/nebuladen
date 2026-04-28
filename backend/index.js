@@ -42,6 +42,12 @@ app.use("/auth", authLimiter, authRoutes);
 app.use("/agent", verifyToken, agentRoutes);
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
+app.get("/metrics", async (req, res) => {
+  const { getMetrics } = require("./metrics");
+  const { getSessions } = require("./agent");
+  const metrics = await getMetrics(Object.keys(getSessions()).length);
+  res.json(metrics);
+});
 
 server.on("upgrade", (request, socket, head) => {
   const parsedUrl = url.parse(request.url, true);

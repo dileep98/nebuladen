@@ -136,6 +136,6 @@ Deprioritized: voice calls, multi-channel support, enterprise features.
 ---
 
 ## Live Links
-- **Frontend:** [Vercel URL here]
+- **Frontend:** https://nebuladen.vercel.app
+- **Backend:** https://nebuladen.duckdns.org
 - **Repository:** https://github.com/dileep98/nebuladen
-- **Backend API:** http://50.17.232.178:4000/health

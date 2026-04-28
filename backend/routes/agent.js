@@ -1,25 +1,26 @@
 const express = require("express");
+const { getMetrics, getActivity } = require("../metrics");
+const { getSessions } = require("../agent");
+
 const router = express.Router();
 
-// Store agent status per user (in memory for now)
-const agentStatus = {};
-
-router.get("/status", (req, res) => {
+router.get("/status", async (req, res) => {
   const userId = req.user.id;
-  const status = agentStatus[userId] || {
-    status: "online",
-    tasksRun: 0,
-    uptime: "100%",
-    region: "us-east-1",
-    instance: "t2.micro",
-  };
-  res.json(status);
-});
+  const sessions = getSessions();
+  const metrics = await getMetrics(Object.keys(sessions).length);
+  const activity = getActivity(userId);
 
-router.post("/status", (req, res) => {
-  const userId = req.user.id;
-  agentStatus[userId] = { ...agentStatus[userId], ...req.body };
-  res.json({ ok: true });
+  res.json({
+    tasksRun: activity.length,
+    uptime: metrics.uptime,
+    region: metrics.region,
+    instance: metrics.instance,
+    cpu: metrics.cpu,
+    memory: metrics.memory,
+    disk: metrics.disk,
+    activeSessions: metrics.activeSessions,
+    activity,
+  });
 });
 
 module.exports = router;
