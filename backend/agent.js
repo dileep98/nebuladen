@@ -111,20 +111,77 @@ Be concise, practical, and technical. You have access to a real Linux terminal.`
   }
 }
 
+const BLOCKED_COMMANDS = [
+  // Destructive
+  "rm -rf /", "rm -rf ~", "mkfs", "dd if=", ":(){:|:&};:",
+  "chmod -R 777 /", "chown -R",
+  // Network abuse
+  "curl http://malicious", "wget http://",
+  // Privilege escalation
+  "sudo su", "sudo -i", "su root",
+  // Sensitive files
+  "cat /etc/shadow", "cat /etc/passwd",
+  "/proc/", "/sys/",
+  // Fork bombs and infinite loops
+  "while true", "for(;;)",
+];
+
+const BLOCKED_PATTERNS = [
+  /rm\s+-rf\s+[\/~]/, // rm -rf / or rm -rf ~
+  />\s*\/dev\/sd/, // writing to disk devices
+  /chmod\s+[0-7]*7[0-7]*\s+\//, // chmod 777 /
+  /curl.*\|\s*bash/, // curl | bash (remote code execution)
+  /wget.*\|\s*bash/, // wget | bash
+  /nc\s+-l/, // netcat listener
+  /python.*-c.*import\s+os.*system/, // python os.system
+];
+
 function executeShell(command) {
   return new Promise((resolve) => {
-    const blocked = ["rm -rf /", "mkfs", "dd if=", ":(){:|:&};:"];
-    if (blocked.some((b) => command.includes(b))) {
+    // Check blocklist
+    const isBlocked = BLOCKED_COMMANDS.some((b) =>
+      command.toLowerCase().includes(b.toLowerCase())
+    );
+    if (isBlocked) {
+      logger.warn("shell_blocked", { command });
       resolve("⚠️ That command is blocked for safety reasons.");
       return;
     }
-    exec(command, { timeout: 10000 }, (error, stdout, stderr) => {
-      if (error) {
-        resolve(`Error:\n${stderr || error.message}`);
-      } else {
-        resolve(stdout || "Command executed successfully (no output)");
+
+    // Check patterns
+    const matchesPattern = BLOCKED_PATTERNS.some((p) => p.test(command));
+    if (matchesPattern) {
+      logger.warn("shell_blocked_pattern", { command });
+      resolve("⚠️ That command pattern is blocked for safety reasons.");
+      return;
+    }
+
+    // Limit output size
+    exec(
+      command,
+      {
+        timeout: 10000,
+        maxBuffer: 1024 * 512, // 512KB max output
+        env: {
+          ...process.env,
+          PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        },
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          logger.warn("shell_error", { command, error: error.message });
+          resolve(`Error:\n${stderr || error.message}`);
+        } else {
+          const output = stdout || "Command executed successfully (no output)";
+          // Truncate if too long
+          if (output.length > 3000) {
+            resolve(output.slice(0, 3000) + "\n... (output truncated)");
+          } else {
+            resolve(output);
+          }
+        }
       }
-    });
+    );
   });
 }
 
