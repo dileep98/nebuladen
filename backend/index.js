@@ -48,12 +48,16 @@ server.on("upgrade", (request, socket, head) => {
   const token = parsedUrl.query.token;
   const pathname = parsedUrl.pathname;
 
+  console.log("WebSocket upgrade request:", pathname, token ? "token present" : "no token");
+
   if (pathname !== "/ws") {
+    console.log("Wrong path, destroying socket");
     socket.destroy();
     return;
   }
 
   if (!token) {
+    console.log("No token, destroying socket");
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
@@ -61,11 +65,13 @@ server.on("upgrade", (request, socket, head) => {
 
   try {
     const user = verifyToken(token);
+    console.log("Token verified for user:", user.name);
     request.user = user;
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit("connection", ws, request);
     });
-  } catch {
+  } catch (err) {
+    console.log("Token verification failed:", err.message);
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
   }
