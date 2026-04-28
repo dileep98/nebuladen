@@ -67,6 +67,11 @@ Deprioritized: voice calls, multi-channel support, enterprise features.
 - **GitHub Actions** — CI/CD pipeline
 - **Vercel** — frontend hosting
 - **JWT + bcryptjs** — authentication
+- **Winston** — structured JSON logging
+- **Helmet.js** — HTTP security headers
+- **UptimeRobot** — uptime monitoring for frontend and backend
+- **AWS CloudWatch** — CPU and status check alarms
+- **AWS SNS** — alert notifications via email
 
 ---
 
@@ -132,6 +137,40 @@ Deprioritized: voice calls, multi-channel support, enterprise features.
 - **Simpler onboarding** — no early access gate, instant signup
 - **Developer-friendly** — clean codebase with clear separation of concerns
 - **Open architecture** — easy to extend with new agent capabilities
+
+---
+
+## SRE Practices Implemented
+
+### Observability
+- Structured JSON logging with Winston — every request, WebSocket event, and error is logged with timestamp, metadata and severity
+- Real-time system metrics endpoint (/metrics) — CPU, RAM, disk, active sessions
+- Live dashboard showing agent resource usage
+
+### Monitoring & Alerting
+- UptimeRobot monitors frontend and backend every 5 minutes
+- CloudWatch alarm triggers when EC2 CPU exceeds 80%
+- CloudWatch status check alarm triggers if EC2 instance fails
+- All alerts delivered via AWS SNS to email
+
+### Reliability
+- PM2 process manager with auto-restart on crash
+- PM2 startup script ensures backend survives EC2 reboots
+- Graceful shutdown handles SIGTERM properly
+- Health check verification in CI/CD pipeline — deploy fails if backend doesn't respond
+
+### Security
+- Helmet.js security headers on all HTTP responses
+- Rate limiting on all endpoints (100 req/15min global, 10 req/15min on auth)
+- JWT authentication with 7-day expiry
+- bcrypt password hashing with auto-generated salt
+- Shell command blocklist prevents dangerous operations
+- Daily message limit (50/day) prevents API abuse
+
+### Operational Documentation
+- RUNBOOK.md with incident response procedures
+- Architecture documentation in SUBMISSION.md
+- CI/CD pipeline with automatic health verification
 
 ---
 
