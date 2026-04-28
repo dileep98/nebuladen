@@ -6,14 +6,15 @@ export default function Dashboard() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [agentStats, setAgentStats] = useState({
-    tasksRun: 0,
-    uptime: "100%",
-    region: "us-east-1",
-    cpu: 0,
-    memory: { percent: 0, used: 0, total: 0 },
-    disk: { percent: 0 },
-    activity: [],
-  });
+  tasksRun: 0,
+  uptime: "100%",
+  region: "us-east-1",
+  cpu: 0,
+  memory: { percent: 0, used: 0, total: 0 },
+  disk: { percent: 0 },
+  network: { rx: 0, tx: 0 },
+  activity: [],
+});
 
   useEffect(() => {
     (async () => {
@@ -127,6 +128,18 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Network I/O */}
+        <div className="mt-2 grid grid-cols-2 gap-4">
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <div className="text-white/40 text-xs mb-1">Network In</div>
+            <div className="text-lg font-bold">{((agentStats.network?.rx ?? 0) / 1024).toFixed(1)} MB</div>
+          </div>
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+            <div className="text-white/40 text-xs mb-1">Network Out</div>
+            <div className="text-lg font-bold">{((agentStats.network?.tx ?? 0) / 1024).toFixed(1)} MB</div>
+          </div>
         </div>
 
         {/* Recent activity */}

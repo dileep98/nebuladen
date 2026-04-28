@@ -23,10 +23,11 @@ function getActivity(userId) {
 }
 
 async function getMetrics(activeSessions) {
-  const [cpu, mem, disk] = await Promise.all([
+  const [cpu, mem, disk, net] = await Promise.all([
     si.currentLoad(),
     si.mem(),
     si.fsSize(),
+    si.networkStats(),
   ]);
 
   const uptimeMs = Date.now() - startTime;
@@ -44,6 +45,10 @@ async function getMetrics(activeSessions) {
       used: Math.round(disk[0]?.used / 1024 / 1024 / 1024),
       total: Math.round(disk[0]?.size / 1024 / 1024 / 1024),
       percent: Math.round(disk[0]?.use),
+    },
+    network: {
+      rx: Math.round((net[0]?.rx_bytes || 0) / 1024),
+      tx: Math.round((net[0]?.tx_bytes || 0) / 1024),
     },
     uptime: `${uptimeHours}h ${uptimeMins}m`,
     activeSessions,
