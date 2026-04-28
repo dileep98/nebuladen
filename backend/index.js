@@ -6,6 +6,7 @@ const url = require("url");
 const rateLimit = require("express-rate-limit");
 const logger = require("./logger");
 require("dotenv").config();
+const helmet = require("helmet");
 
 const authRoutes = require("./routes/auth");
 const agentRoutes = require("./routes/agent");
@@ -17,6 +18,7 @@ const server = http.createServer(app);
 
 const wss = new WebSocket.Server({ noServer: true });
 
+app.use(helmet());
 app.use(cors({
   origin: ["http://localhost:3000", "https://nebuladen.vercel.app"],
   credentials: true
