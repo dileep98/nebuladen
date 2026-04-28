@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
 
 export default function Chat() {
   const router = useRouter();
@@ -31,10 +32,9 @@ export default function Chat() {
       return;
     }
 
-    // Connect to WebSocket
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "wss://nebuladen.duckdns.org";
-    console.log("Connecting to WebSocket:", wsUrl);
-    const ws = new WebSocket(`${wsUrl}/ws?token=${token}`);    wsRef.current = ws;
+    const ws = new WebSocket(`${wsUrl}/ws?token=${token}`);
+    wsRef.current = ws;
 
     ws.onopen = () => setConnected(true);
     ws.onclose = () => setConnected(false);
@@ -103,13 +103,40 @@ export default function Chat() {
               </div>
             )}
             <div
-              className={`max-w-xl px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+              className={`max-w-xl px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                 msg.role === "user"
-                  ? "bg-violet-600 text-white rounded-tr-sm"
+                  ? "bg-violet-600 text-white rounded-tr-sm whitespace-pre-wrap"
                   : "bg-white/5 border border-white/10 text-white/80 rounded-tl-sm"
               }`}
             >
-              {msg.text}
+              {msg.role === "agent" ? (
+                <div style={{
+                  lineHeight: "1.6",
+                  fontSize: "13px",
+                }}>
+                  <ReactMarkdown
+                    components={{
+                      h1: ({children}) => <h1 style={{fontSize:"16px", fontWeight:"600", marginBottom:"8px", color:"rgba(255,255,255,0.9)"}}>{children}</h1>,
+                      h2: ({children}) => <h2 style={{fontSize:"14px", fontWeight:"600", marginBottom:"6px", marginTop:"12px", color:"rgba(255,255,255,0.9)"}}>{children}</h2>,
+                      h3: ({children}) => <h3 style={{fontSize:"13px", fontWeight:"600", marginBottom:"4px", marginTop:"10px", color:"rgba(255,255,255,0.85)"}}>{children}</h3>,
+                      p: ({children}) => <p style={{marginBottom:"8px", color:"rgba(255,255,255,0.8)"}}>{children}</p>,
+                      ul: ({children}) => <ul style={{paddingLeft:"16px", marginBottom:"8px", listStyleType:"disc"}}>{children}</ul>,
+                      ol: ({children}) => <ol style={{paddingLeft:"16px", marginBottom:"8px", listStyleType:"decimal"}}>{children}</ol>,
+                      li: ({children}) => <li style={{marginBottom:"2px", color:"rgba(255,255,255,0.8)"}}>{children}</li>,
+                      code: ({inline, children}) => inline 
+                        ? <code style={{background:"rgba(255,255,255,0.1)", color:"#c4b5fd", padding:"1px 5px", borderRadius:"4px", fontSize:"12px", fontFamily:"monospace"}}>{children}</code>
+                        : <code>{children}</code>,
+                      pre: ({children}) => <pre style={{background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:"8px", padding:"12px", overflowX:"auto", marginBottom:"8px", fontSize:"12px", fontFamily:"monospace"}}>{children}</pre>,
+                      strong: ({children}) => <strong style={{fontWeight:"600", color:"rgba(255,255,255,0.95)"}}>{children}</strong>,
+                      hr: () => <hr style={{borderColor:"rgba(255,255,255,0.1)", margin:"12px 0"}}/>,
+                    }}
+                  >
+                    {msg.text}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                msg.text
+              )}
             </div>
           </div>
         ))}
