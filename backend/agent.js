@@ -1,6 +1,7 @@
 const { exec } = require("child_process");
 const Anthropic = require("@anthropic-ai/sdk");
 const { logActivity } = require("./metrics");
+const logger = require("./logger");
 
 const sessions = {};
 const messageCounts = {};
@@ -37,7 +38,7 @@ function checkRateLimit(userId) {
 }
 
 async function handleAgentConnection(ws, user) {
-  console.log(`Agent connected for user: ${user.name}`);
+  logger.info("agent_connected", { userId: user.id, name: user.name });
   sessions[user.id] = { ws, user, history: [] };
 
   logActivity(user.id, "connect", "Agent session started");
@@ -77,7 +78,7 @@ async function handleAgentConnection(ws, user) {
   });
 
   ws.on("close", () => {
-    console.log(`Agent disconnected for user: ${user.name}`);
+    logger.info("agent_disconnected", { userId: user.id, name: user.name });
     logActivity(user.id, "disconnect", "Agent session ended");
     delete sessions[user.id];
   });

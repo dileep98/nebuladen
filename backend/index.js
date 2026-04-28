@@ -4,6 +4,7 @@ const WebSocket = require("ws");
 const cors = require("cors");
 const url = require("url");
 const rateLimit = require("express-rate-limit");
+const logger = require("./logger");
 require("dotenv").config();
 
 const authRoutes = require("./routes/auth");
@@ -14,23 +15,36 @@ const { handleAgentConnection } = require("./agent");
 const app = express();
 const server = http.createServer(app);
 
-// WebSocket server
 const wss = new WebSocket.Server({ noServer: true });
 
-app.use(cors({ 
+app.use(cors({
   origin: ["http://localhost:3000", "https://nebuladen.vercel.app"],
-  credentials: true 
+  credentials: true
 }));
 app.use(express.json());
 
-// Global rate limit — 100 requests per 15 minutes per IP
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    logger.info("http_request", {
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      duration_ms: Date.now() - start,
+      ip: req.ip,
+    });
+  });
+  next();
+});
+
+// Rate limiters
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: { message: "Too many requests, please try again later." },
 });
 
-// Auth rate limit — 10 attempts per 15 minutes per IP
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
@@ -41,29 +55,32 @@ app.use(globalLimiter);
 app.use("/auth", authLimiter, authRoutes);
 app.use("/agent", verifyToken, agentRoutes);
 
-app.get("/health", (req, res) => res.json({ status: "ok" }));
+app.get("/health", (req, res) => {
+  logger.info("health_check", { status: "ok" });
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 app.get("/metrics", async (req, res) => {
   const { getMetrics } = require("./metrics");
   const { getSessions } = require("./agent");
   const metrics = await getMetrics(Object.keys(getSessions()).length);
+  logger.info("metrics_requested", metrics);
   res.json(metrics);
 });
 
+// WebSocket upgrade
 server.on("upgrade", (request, socket, head) => {
   const parsedUrl = url.parse(request.url, true);
   const token = parsedUrl.query.token;
   const pathname = parsedUrl.pathname;
 
-  console.log("WebSocket upgrade request:", pathname, token ? "token present" : "no token");
-
   if (pathname !== "/ws") {
-    console.log("Wrong path, destroying socket");
     socket.destroy();
     return;
   }
 
   if (!token) {
-    console.log("No token, destroying socket");
+    logger.warn("websocket_rejected", { reason: "no_token" });
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
     return;
@@ -71,13 +88,13 @@ server.on("upgrade", (request, socket, head) => {
 
   try {
     const user = verifyToken(token);
-    console.log("Token verified for user:", user.name);
+    logger.info("websocket_connected", { userId: user.id, name: user.name });
     request.user = user;
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit("connection", ws, request);
     });
   } catch (err) {
-    console.log("Token verification failed:", err.message);
+    logger.warn("websocket_rejected", { reason: "invalid_token", error: err.message });
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();
   }
@@ -87,7 +104,25 @@ wss.on("connection", (ws, request) => {
   handleAgentConnection(ws, request.user);
 });
 
+// Graceful shutdown
+process.on("SIGTERM", () => {
+  logger.info("shutdown", { reason: "SIGTERM received" });
+  server.close(() => {
+    logger.info("shutdown", { reason: "HTTP server closed" });
+    process.exit(0);
+  });
+});
+
+process.on("uncaughtException", (err) => {
+  logger.error("uncaught_exception", { error: err.message, stack: err.stack });
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  logger.error("unhandled_rejection", { reason: String(reason) });
+});
+
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`NebulaDen backend running on port ${PORT}`);
+  logger.info("server_started", { port: PORT, env: process.env.NODE_ENV || "development" });
 });
