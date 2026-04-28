@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 export default function Chat() {
   const router = useRouter();
@@ -115,6 +116,7 @@ export default function Chat() {
                   fontSize: "13px",
                 }}>
                   <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
                     components={{
                       h1: ({children}) => <h1 style={{fontSize:"16px", fontWeight:"600", marginBottom:"8px", color:"rgba(255,255,255,0.9)"}}>{children}</h1>,
                       h2: ({children}) => <h2 style={{fontSize:"14px", fontWeight:"600", marginBottom:"6px", marginTop:"12px", color:"rgba(255,255,255,0.9)"}}>{children}</h2>,
