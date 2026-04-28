@@ -32,8 +32,9 @@ export default function Chat() {
     }
 
     // Connect to WebSocket
-    const ws = new WebSocket(`${process.env.NEXT_PUBLIC_WS_URL}/ws?token=${token}`);
-    wsRef.current = ws;
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "wss://nebuladen.duckdns.org";
+    console.log("Connecting to WebSocket:", wsUrl);
+    const ws = new WebSocket(`${wsUrl}/ws?token=${token}`);    wsRef.current = ws;
 
     ws.onopen = () => setConnected(true);
     ws.onclose = () => setConnected(false);
