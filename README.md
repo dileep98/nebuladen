@@ -31,15 +31,33 @@ NebulaDen is an AI agent platform where every user gets a personal AI agent ("Ne
 ## Architecture
 
 ```
-User Browser
-    ↓ (HTTPS)
-Next.js Frontend (Vercel)
-    ↓ (WebSocket)
-Express Backend (EC2 t3.micro)
-    ↓ (Anthropic SDK)
-Claude AI Agent
-    ↓ (child_process)
-Shell execution on EC2
+┌─────────────┐     HTTPS      ┌──────────────────────────────────────┐
+│ User browser│ ─────────────► │           Vercel (Next.js)           │
+└─────────────┘                └──────────────┬───────────────────────┘
+                                              │ WSS + HTTPS
+                                              ▼
+                               ┌──────────────────────────────────────┐
+                               │         AWS EC2 t3.micro             │
+                               │  ┌────────────────────────────────┐  │
+                               │  │     Nginx (SSL termination)    │  │
+                               │  └───────────────┬────────────────┘  │
+                               │                  │                   │
+                               │  ┌───────────────▼────────────────┐  │
+                               │  │   Express (API + WebSocket)    │  │
+                               │  └───────┬───────────────┬────────┘  │
+                               │          │               │           │
+                               │  ┌───────▼──────┐ ┌─────▼────────┐   │
+                               │  │  Claude API  │ │    Shell     │   │
+                               │  │  (Anthropic) │ │ child_process│   │
+                               │  └──────────────┘ └──────────────┘   │
+                               │                                      │
+                               │  PM2 · CloudWatch · Winston logs     │
+                               └──────────────────────────────────────┘
+                                              ▲
+                               ┌──────────────┴───────────────────────┐
+                               │     GitHub Actions (CI/CD)           │
+                               │   push → pull → install → restart    │
+                               └──────────────────────────────────────┘
 ```
 
 ## Local Development
