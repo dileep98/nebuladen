@@ -22,6 +22,11 @@ jobs:
           cd backend
           npm install
 
+      - name: Security audit
+        run: |
+          cd backend
+          npm audit --audit-level=high
+
       - name: Run tests
         run: |
           cd backend
