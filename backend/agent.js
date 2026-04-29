@@ -90,14 +90,16 @@ async function handleAgentConnection(ws, user) {
 }
 
 async function runAgent(command, history, mode) {
-  // Handle multiple $ commands
-  const lines = command.split("\n").map(l => l.trim()).filter(Boolean);
-  const shellLines = lines.filter(l => l.startsWith("$ ") || l.toLowerCase().startsWith("run:"));
+  const trimmed = command.trim();
+  
+  // Split by newlines and check if multiple shell commands
+  const lines = trimmed.split("\n").map(l => l.trim()).filter(Boolean);
+  const allShell = lines.every(l => l.startsWith("$") || l.toLowerCase().startsWith("run:"));
 
-  if (shellLines.length > 1) {
+  if (lines.length > 1 && allShell) {
     // Multiple shell commands — run each and combine output
     const outputs = [];
-    for (const line of shellLines) {
+    for (const line of lines) {
       const cmd = line.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
       const result = await executeShell(cmd);
       outputs.push(`$ ${cmd}\n${result}`);
@@ -105,8 +107,9 @@ async function runAgent(command, history, mode) {
     return outputs.join("\n\n");
   }
 
-  if (command.startsWith("$ ") || command.toLowerCase().startsWith("run:")) {
-    const cmd = command.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
+  // Single shell command
+  if (trimmed.startsWith("$ ") || trimmed.toLowerCase().startsWith("run:")) {
+    const cmd = trimmed.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
     return await executeShell(cmd);
   }
 
