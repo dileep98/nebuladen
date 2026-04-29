@@ -4,6 +4,15 @@ import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+const suggestions = [
+  { label: "🖥️ System info", command: "$ uname -a && df -h && free -m" },
+  { label: "📁 List files", command: "$ ls -la" },
+  { label: "🐍 Python version", command: "$ python3 --version" },
+  { label: "🌐 Check connectivity", command: "$ curl -s https://api.ipify.org" },
+  { label: "📝 Write a script", command: "Write a Python script that prints the first 10 Fibonacci numbers" },
+  { label: "💡 What can you do?", command: "What can you do?" },
+];
+
 export default function Chat() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -16,6 +25,7 @@ export default function Chat() {
   const [input, setInput] = useState("");
   const [connected, setConnected] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [userHasSent, setUserHasSent] = useState(false);
   const wsRef = useRef(null);
   const bottomRef = useRef(null);
 
@@ -44,9 +54,7 @@ export default function Chat() {
       ws = new WebSocket(`${wsUrl}/ws?token=${token}`);
       wsRef.current = ws;
 
-      ws.onopen = () => {
-        setConnected(true);
-      };
+      ws.onopen = () => setConnected(true);
 
       ws.onclose = (event) => {
         setConnected(false);
@@ -60,10 +68,7 @@ export default function Chat() {
             }];
           });
         }
-        // Auto reconnect after 3 seconds
-        reconnectTimeout = setTimeout(() => {
-          connect();
-        }, 3000);
+        reconnectTimeout = setTimeout(() => connect(), 3000);
       };
 
       ws.onmessage = (event) => {
@@ -90,6 +95,7 @@ export default function Chat() {
     const text = input.trim();
     setInput("");
     setMessages((prev) => [...prev, { role: "user", text }]);
+    setUserHasSent(true);
     setLoading(true);
     wsRef.current.send(JSON.stringify({ command: text }));
   }
@@ -99,6 +105,10 @@ export default function Chat() {
       e.preventDefault();
       sendMessage();
     }
+  }
+
+  function handleSuggestion(command) {
+    setInput(command);
   }
 
   if (!user) return null;
@@ -143,10 +153,7 @@ export default function Chat() {
               }`}
             >
               {msg.role === "agent" ? (
-                <div style={{
-                  lineHeight: "1.6",
-                  fontSize: "13px",
-                }}>
+                <div style={{ lineHeight: "1.6", fontSize: "13px" }}>
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
@@ -157,7 +164,7 @@ export default function Chat() {
                       ul: ({children}) => <ul style={{paddingLeft:"16px", marginBottom:"8px", listStyleType:"disc"}}>{children}</ul>,
                       ol: ({children}) => <ol style={{paddingLeft:"16px", marginBottom:"8px", listStyleType:"decimal"}}>{children}</ol>,
                       li: ({children}) => <li style={{marginBottom:"2px", color:"rgba(255,255,255,0.8)"}}>{children}</li>,
-                      code: ({inline, children}) => inline 
+                      code: ({inline, children}) => inline
                         ? <code style={{background:"rgba(255,255,255,0.1)", color:"#c4b5fd", padding:"1px 5px", borderRadius:"4px", fontSize:"12px", fontFamily:"monospace"}}>{children}</code>
                         : <code>{children}</code>,
                       pre: ({children}) => <pre style={{background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:"8px", padding:"12px", overflowX:"auto", marginBottom:"8px", fontSize:"12px", fontFamily:"monospace"}}>{children}</pre>,
@@ -194,26 +201,44 @@ export default function Chat() {
 
       {/* Input */}
       <div className="shrink-0 border-t border-white/10 px-4 py-4">
-        <div className="max-w-3xl mx-auto flex gap-3">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Give your agent a task... (Enter to send)"
-            rows={1}
-            className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-violet-500 transition placeholder:text-white/20 resize-none"
-          />
-          <button
-            onClick={sendMessage}
-            disabled={!connected || loading || !input.trim()}
-            className="px-5 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-30 rounded-xl font-medium transition text-sm shrink-0"
-          >
-            Send
-          </button>
+        <div className="max-w-3xl mx-auto">
+
+          {/* Suggested prompts - show only before user sends first message */}
+          {!userHasSent && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {suggestions.map((s) => (
+                <button
+                  key={s.label}
+                  onClick={() => handleSuggestion(s.command)}
+                  className="px-3 py-1.5 text-xs bg-white/5 hover:bg-violet-500/20 border border-white/10 hover:border-violet-500/30 rounded-lg transition text-white/60 hover:text-white/90"
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Give your agent a task... (Enter to send)"
+              rows={1}
+              className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-violet-500 transition placeholder:text-white/20 resize-none"
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!connected || loading || !input.trim()}
+              className="px-5 py-3 bg-violet-600 hover:bg-violet-500 disabled:opacity-30 rounded-xl font-medium transition text-sm shrink-0"
+            >
+              Send
+            </button>
+          </div>
+          <p className="text-center text-white/20 text-xs mt-2">
+            Tip: prefix with <code className="text-violet-400">$</code> to run shell commands directly
+          </p>
         </div>
-        <p className="text-center text-white/20 text-xs mt-2">
-          Your agent is running on a real cloud machine
-        </p>
       </div>
     </main>
   );
