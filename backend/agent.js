@@ -3,6 +3,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { logActivity } = require("./metrics");
 const logger = require("./logger");
 const path = require("path");
+const fs = require("fs");
 
 const sessions = {};
 const messageCounts = {};
@@ -10,6 +11,17 @@ const DAILY_MESSAGE_LIMIT = 50;
 const MESSAGE_COOLDOWN_MS = 3000;
 const MAX_MESSAGE_LENGTH = 2000;
 const WORKSPACE_BASE = "/home/ubuntu/workspace";
+// Load guardrails at startup
+let guardrailsSummary = "";
+try {
+  const guardrailsPath = path.join(__dirname, "../GUARDRAILS.md");
+  const content = fs.readFileSync(guardrailsPath, "utf8");
+  // Extract just the blocked commands section for the prompt
+  const match = content.match(/## 1\. Shell Command Execution Guardrails([\s\S]*?)## 2\./);
+  guardrailsSummary = match ? match[1].trim().slice(0, 500) : "";
+} catch {
+  guardrailsSummary = "";
+}
 
 function getSessions() {
   return sessions;
@@ -160,25 +172,28 @@ async function runAgent(command, history, mode, userId, workspaceDir) {
       max_tokens: 1024,
       system: `You are Nebula, an AI agent with a real Linux terminal on AWS EC2 Ubuntu.
 
-CRITICAL RULE: You MUST execute commands using $ prefix. NEVER simulate or pretend.
+      CRITICAL RULE: You MUST execute commands using $ prefix. NEVER simulate or pretend.
 
-When user asks to run/execute/list/show anything on the system:
-- ALWAYS respond with: $ <command>
-- The $ prefix triggers REAL execution on the server
-- NEVER say you cannot execute - you CAN
+      When user asks to run/execute/list/show anything on the system:
+      - ALWAYS respond with: $ <command>
+      - The $ prefix triggers REAL execution on the server
+      - NEVER say you cannot execute - you CAN
 
-Examples:
-- User: "ls" or "list files" → You respond: $ ls -la
-- User: "show disk usage" → You respond: $ df -h  
-- User: "what's running" → You respond: $ ps aux
-- User: "check memory" → You respond: $ free -m
+      Examples:
+      - User: "ls" or "list files" → You respond: $ ls -la
+      - User: "show disk usage" → You respond: $ df -h  
+      - User: "what's running" → You respond: $ ps aux
+      - User: "check memory" → You respond: $ free -m
 
-For coding tasks, write the code AND execute it:
-- Write a Python script → write code then: $ python3 script.py
+      For coding tasks, write the code AND execute it:
+      - Write a Python script → write code then: $ python3 script.py
 
-BLOCKED: Never access db.json, .env, activity.json, or /home/ubuntu/nebuladen
-WORKSPACE: The user's working directory is /home/ubuntu/workspace. Never use /workspace alone.
-SUDO: Never use sudo — it is blocked. Run commands without sudo.`,
+      BLOCKED: Never access db.json, .env, activity.json, or /home/ubuntu/nebuladen
+      WORKSPACE: The user's working directory is /home/ubuntu/workspace. Never use /workspace alone.
+      SUDO: Never use sudo — it is blocked. Run commands without sudo.
+
+      GUARDRAILS REFERENCE:
+      ${guardrailsSummary}`,
       messages: history,
     });
     return response.content[0].text;
@@ -203,6 +218,8 @@ const BLOCKED_COMMANDS = [
   "../nebuladen", "/home/ubuntu/nebuladen",
   // Network abuse
   "curl http://malicious",
+  "/etc/shadow",
+  "/etc/passwd",
 ];
 
 const BLOCKED_PATTERNS = [

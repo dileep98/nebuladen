@@ -138,6 +138,7 @@ backend/.env
 - [SUBMISSION.md](./SUBMISSION.md) — architecture decisions, challenges, approach
 - [RUNBOOK.md](./RUNBOOK.md) — operational procedures and incident response
 - [terraform/main.tf](./terraform/main.tf) — full infrastructure as code
+- [GUARDRAILS.md](./GUARDRAILS.md) | Safety measures, blocked commands, responsible AI use |
 
 ## Built for SkyKoi Senior Platform Engineer Assessment
 This project was built as part of the SkyKoi hiring process — a one-week take-home assessment to build an original AI agent platform with real cloud compute backing.
