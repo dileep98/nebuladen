@@ -7,6 +7,7 @@ const sessions = {};
 const messageCounts = {};
 const DAILY_MESSAGE_LIMIT = 50;
 const MESSAGE_COOLDOWN_MS = 3000;
+const MAX_MESSAGE_LENGTH = 2000;
 
 function getSessions() {
   return sessions;
@@ -48,6 +49,25 @@ async function handleAgentConnection(ws, user) {
       const { command, mode } = JSON.parse(data);
       const session = sessions[user.id];
 
+      // Message length limit
+      if (command.length > MAX_MESSAGE_LENGTH) {
+        ws.send(JSON.stringify({
+          output: `⚠️ Message too long. Please keep messages under ${MAX_MESSAGE_LENGTH} characters.`,
+          type: "error"
+        }));
+        return;
+      }
+
+      // Empty message check
+      if (!command.trim()) {
+        ws.send(JSON.stringify({
+          output: "⚠️ Please enter a message.",
+          type: "error"
+        }));
+        return;
+      }
+
+      // Rate limit check
       const rateCheck = checkRateLimit(user.id);
       if (!rateCheck.allowed) {
         ws.send(JSON.stringify({ output: `⚠️ ${rateCheck.reason}`, type: "error" }));
@@ -57,9 +77,12 @@ async function handleAgentConnection(ws, user) {
       session.history.push({ role: "user", content: command });
 
       // Log the activity
-      if (command.startsWith("$ ") || command.toLowerCase().startsWith("run:")) {
-        const cmd = command.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
-        logActivity(user.id, "shell", `Ran: ${cmd}`);
+      const trimmed = command.trim();
+      const lines = trimmed.split("\n").map(l => l.trim()).filter(Boolean);
+      const isShell = lines.every(l => l.startsWith("$") || l.toLowerCase().startsWith("run:"));
+
+      if (isShell) {
+        logActivity(user.id, "shell", `Ran: ${trimmed.slice(0, 60)}`);
       } else {
         logActivity(user.id, "chat", command.slice(0, 60) + (command.length > 60 ? "..." : ""));
       }
@@ -73,6 +96,7 @@ async function handleAgentConnection(ws, user) {
 
       ws.send(JSON.stringify({ output, type: "response" }));
     } catch (err) {
+      logger.error("agent_message_error", { error: err.message });
       ws.send(JSON.stringify({ output: `Error: ${err.message}`, type: "error" }));
     }
   });
@@ -84,14 +108,14 @@ async function handleAgentConnection(ws, user) {
   });
 
   ws.send(JSON.stringify({
-    output: `Good ${getTimeOfDay()}, ${user.name}! I'm your Nebula agent running on a cloud machine. What shall we build today?\n\n_Daily limit: ${DAILY_MESSAGE_LIMIT} messages_`,
+    output: `Hey ${user.name}! I'm your Nebula agent running on a cloud machine. What shall we build today?\n\n_Daily limit: ${DAILY_MESSAGE_LIMIT} messages_`,
     type: "welcome",
   }));
 }
 
 async function runAgent(command, history, mode) {
   const trimmed = command.trim();
-  
+
   // Split by newlines and check if multiple shell commands
   const lines = trimmed.split("\n").map(l => l.trim()).filter(Boolean);
   const allShell = lines.every(l => l.startsWith("$") || l.toLowerCase().startsWith("run:"));
@@ -108,7 +132,7 @@ async function runAgent(command, history, mode) {
   }
 
   // Single shell command
-  if (trimmed.startsWith("$ ") || trimmed.toLowerCase().startsWith("run:")) {
+  if (trimmed.startsWith("$") || trimmed.toLowerCase().startsWith("run:")) {
     const cmd = trimmed.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
     return await executeShell(cmd);
   }
@@ -118,7 +142,7 @@ async function runAgent(command, history, mode) {
     const response = await client.messages.create({
       model: mode === "fast" ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-6",
       max_tokens: 1024,
-      system: `You are Nebula, an AI agent running on a dedicated cloud machine (AWS EC2 t3.micro, Ubuntu). 
+      system: `You are Nebula, an AI agent running on a dedicated cloud machine (AWS EC2 t3.micro, Ubuntu).
 You help users by executing tasks, writing code, managing files, and answering questions.
 When a user asks you to run something, prefix the command with $ and explain what it does.
 Be concise, practical, and technical. You have access to a real Linux terminal.`,
@@ -126,38 +150,33 @@ Be concise, practical, and technical. You have access to a real Linux terminal.`
     });
     return response.content[0].text;
   } catch (err) {
+    logger.error("claude_api_error", { error: err.message });
     return `I'm having trouble connecting to my brain right now. Error: ${err.message}`;
   }
 }
 
 const BLOCKED_COMMANDS = [
-  // Destructive
   "rm -rf /", "rm -rf ~", "mkfs", "dd if=", ":(){:|:&};:",
   "chmod -R 777 /", "chown -R",
-  // Network abuse
   "curl http://malicious", "wget http://",
-  // Privilege escalation
   "sudo su", "sudo -i", "su root",
-  // Sensitive files
   "cat /etc/shadow", "cat /etc/passwd",
   "/proc/", "/sys/",
-  // Fork bombs and infinite loops
   "while true", "for(;;)",
 ];
 
 const BLOCKED_PATTERNS = [
-  /rm\s+-rf\s+[\/~]/, // rm -rf / or rm -rf ~
-  />\s*\/dev\/sd/, // writing to disk devices
-  /chmod\s+[0-7]*7[0-7]*\s+\//, // chmod 777 /
-  /curl.*\|\s*bash/, // curl | bash (remote code execution)
-  /wget.*\|\s*bash/, // wget | bash
-  /nc\s+-l/, // netcat listener
-  /python.*-c.*import\s+os.*system/, // python os.system
+  /rm\s+-rf\s+[\/~]/,
+  />\s*\/dev\/sd/,
+  /chmod\s+[0-7]*7[0-7]*\s+\//,
+  /curl.*\|\s*bash/,
+  /wget.*\|\s*bash/,
+  /nc\s+-l/,
+  /python.*-c.*import\s+os.*system/,
 ];
 
 function executeShell(command) {
   return new Promise((resolve) => {
-    // Check blocklist
     const isBlocked = BLOCKED_COMMANDS.some((b) =>
       command.toLowerCase().includes(b.toLowerCase())
     );
@@ -167,7 +186,6 @@ function executeShell(command) {
       return;
     }
 
-    // Check patterns
     const matchesPattern = BLOCKED_PATTERNS.some((p) => p.test(command));
     if (matchesPattern) {
       logger.warn("shell_blocked_pattern", { command });
@@ -175,12 +193,11 @@ function executeShell(command) {
       return;
     }
 
-    // Limit output size
     exec(
       command,
       {
         timeout: 10000,
-        maxBuffer: 1024 * 512, // 512KB max output
+        maxBuffer: 1024 * 512,
         env: {
           ...process.env,
           PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -192,7 +209,6 @@ function executeShell(command) {
           resolve(`Error:\n${stderr || error.message}`);
         } else {
           const output = stdout || "Command executed successfully (no output)";
-          // Truncate if too long
           if (output.length > 3000) {
             resolve(output.slice(0, 3000) + "\n... (output truncated)");
           } else {
