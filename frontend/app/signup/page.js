@@ -13,6 +13,26 @@ export default function Signup() {
   async function handleSignup() {
     setLoading(true);
     setError("");
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setError("Please enter a valid email address.");
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters.");
+      setLoading(false);
+      return;
+    }
+
+    if (!name.trim()) {
+      setError("Please enter your name.");
+      setLoading(false);
+      return;
+    }
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/signup`, {
         method: "POST",

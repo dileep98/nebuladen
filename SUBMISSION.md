@@ -145,6 +145,7 @@ Deliberately deferred: voice calls, multi-channel integrations (WhatsApp/Slack),
 - One agent per user is the right starting model (matches SkyKoi's architecture)
 - File-based storage is acceptable for MVP — clear migration path to DynamoDB documented
 - Free-tier EC2 is sufficient to demonstrate the agent-compute architecture
+- The free-tier constraint applies to AWS infrastructure only. The Anthropic Claude API is an external service used as the agent's intelligence layer, similar to how SkyKoi itself uses Claude as its underlying model.
 - Shell execution running on the backend EC2 instance satisfies the "agent backed by cloud compute" requirement
 - Docker container isolation per user would be the production approach for multi-tenancy on shared EC2
 

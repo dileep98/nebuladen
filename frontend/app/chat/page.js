@@ -34,19 +34,51 @@ export default function Chat() {
     }
 
     const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "wss://nebuladen.duckdns.org";
-    const ws = new WebSocket(`${wsUrl}/ws?token=${token}`);
-    wsRef.current = ws;
+    let ws;
+    let reconnectTimeout;
 
-    ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
+    function connect() {
+      const token = localStorage.getItem("token");
+      if (!token) return;
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      setMessages((prev) => [...prev, { role: "agent", text: data.output }]);
-      setLoading(false);
+      ws = new WebSocket(`${wsUrl}/ws?token=${token}`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setConnected(true);
+      };
+
+      ws.onclose = (event) => {
+        setConnected(false);
+        if (event.code === 1006) {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last?.text?.includes("Connection lost")) return prev;
+            return [...prev, {
+              role: "agent",
+              text: "⚠️ Connection lost. Reconnecting in 3 seconds... If you're using Brave, try disabling Shields.",
+            }];
+          });
+        }
+        // Auto reconnect after 3 seconds
+        reconnectTimeout = setTimeout(() => {
+          connect();
+        }, 3000);
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        setMessages((prev) => [...prev, { role: "agent", text: data.output }]);
+        setLoading(false);
+      };
+    }
+
+    connect();
+
+    return () => {
+      clearTimeout(reconnectTimeout);
+      if (wsRef.current) wsRef.current.close();
     };
-
-    return () => ws.close();
   }, []);
 
   useEffect(() => {
