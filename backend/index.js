@@ -62,6 +62,18 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+app.get("/version", (req, res) => {
+  const { execSync } = require("child_process");
+  try {
+    const commit = execSync("git rev-parse --short HEAD").toString().trim();
+    const commitMsg = execSync("git log -1 --pretty=%s").toString().trim();
+    const deployedAt = execSync("git log -1 --pretty=%ci").toString().trim();
+    res.json({ commit, commitMsg, deployedAt });
+  } catch {
+    res.json({ commit: "unknown" });
+  }
+});
+
 app.get("/metrics", async (req, res) => {
   const { getMetrics } = require("./metrics");
   const { getSessions } = require("./agent");
