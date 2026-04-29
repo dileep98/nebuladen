@@ -177,7 +177,8 @@ For coding tasks, write the code AND execute it:
 - Write a Python script → write code then: $ python3 script.py
 
 BLOCKED: Never access db.json, .env, activity.json, or /home/ubuntu/nebuladen
-WORKSPACE: User is in their own isolated directory /workspace`,
+WORKSPACE: The user's working directory is /home/ubuntu/workspace. Never use /workspace alone.
+SUDO: Never use sudo — it is blocked. Run commands without sudo.`,
       messages: history,
     });
     return response.content[0].text;
@@ -218,6 +219,14 @@ const BLOCKED_PATTERNS = [
 
 function executeShell(command, workspaceDir) {
   return new Promise((resolve) => {
+
+    // Extra check — never allow sudo regardless
+    if (command.trim().startsWith("sudo")) {
+      logger.warn("shell_blocked_sudo", { command });
+      resolve("⚠️ sudo is not available in your workspace.");
+      return;
+    }
+
     // Check blocklist
     const isBlocked = BLOCKED_COMMANDS.some((b) =>
       command.toLowerCase().includes(b.toLowerCase())
@@ -235,6 +244,7 @@ function executeShell(command, workspaceDir) {
       resolve("⚠️ That command pattern is blocked for safety reasons.");
       return;
     }
+    
 
     exec(
       command,
