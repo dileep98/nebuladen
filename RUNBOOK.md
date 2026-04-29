@@ -74,6 +74,22 @@ Check system metrics:
 
 ---
 
+## Backup & Recovery
+
+### Database Backup
+- db.json is automatically backed up to S3 every 6 hours
+- Bucket: s3://nebuladen-backups-639163294452/db-backups/
+- S3 versioning enabled for additional protection
+
+### List available backups
+    aws s3 ls s3://nebuladen-backups-639163294452/db-backups/
+
+### Restore from backup
+    aws s3 cp s3://nebuladen-backups-639163294452/db-backups/db_YYYY-MM-DD_HH-MM-SS.json ~/nebuladen/backend/db.json
+    pm2 restart nebuladen-backend
+
+---
+
 ## Deployment Pipeline
 
 Every push to main branch triggers:
