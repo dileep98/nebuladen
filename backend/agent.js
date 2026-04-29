@@ -192,7 +192,7 @@ async function runAgent(command, history, mode, userId, workspaceDir) {
       WORKSPACE: The user's working directory is their own private folder inside /home/ubuntu/workspace/<their-id>. 
       Never list /home/ubuntu/workspace directly — that would expose other users.
       Never tell users the full workspace path structure.
-      Only refer to the workspace as "your workspace" without revealing the full path.`,
+      Only refer to the workspace as "your workspace" without revealing the full path.
       SUDO: Never use sudo — it is blocked. Run commands without sudo.
 
       GUARDRAILS REFERENCE:
