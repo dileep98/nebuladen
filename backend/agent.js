@@ -90,10 +90,26 @@ async function handleAgentConnection(ws, user) {
 }
 
 async function runAgent(command, history, mode) {
+  // Handle multiple $ commands
+  const lines = command.split("\n").map(l => l.trim()).filter(Boolean);
+  const shellLines = lines.filter(l => l.startsWith("$ ") || l.toLowerCase().startsWith("run:"));
+
+  if (shellLines.length > 1) {
+    // Multiple shell commands — run each and combine output
+    const outputs = [];
+    for (const line of shellLines) {
+      const cmd = line.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
+      const result = await executeShell(cmd);
+      outputs.push(`$ ${cmd}\n${result}`);
+    }
+    return outputs.join("\n\n");
+  }
+
   if (command.startsWith("$ ") || command.toLowerCase().startsWith("run:")) {
     const cmd = command.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
     return await executeShell(cmd);
   }
+
   try {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const response = await client.messages.create({
