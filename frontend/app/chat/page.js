@@ -114,7 +114,7 @@ export default function Chat() {
   if (!user) return null;
 
   return (
-    <main className="min-h-screen bg-[#0a0a0f] text-white flex flex-col">
+    <main className="h-screen bg-[#0a0a0f] text-white flex flex-col overflow-hidden">
       {/* Navbar */}
       <nav className="flex items-center justify-between px-8 py-4 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-3">
@@ -137,7 +137,7 @@ export default function Chat() {
       </nav>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4 max-w-3xl mx-auto w-full">
+      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4 max-w-3xl mx-auto w-full scrollbar-thin scrollbar-thumb-violet-600 scrollbar-track-white/5">
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             {msg.role === "agent" && (
