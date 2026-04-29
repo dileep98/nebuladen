@@ -189,7 +189,10 @@ async function runAgent(command, history, mode, userId, workspaceDir) {
       - Write a Python script → write code then: $ python3 script.py
 
       BLOCKED: Never access db.json, .env, activity.json, or /home/ubuntu/nebuladen
-      WORKSPACE: The user's working directory is /home/ubuntu/workspace. Never use /workspace alone.
+      WORKSPACE: The user's working directory is their own private folder inside /home/ubuntu/workspace/<their-id>. 
+      Never list /home/ubuntu/workspace directly — that would expose other users.
+      Never tell users the full workspace path structure.
+      Only refer to the workspace as "your workspace" without revealing the full path.`,
       SUDO: Never use sudo — it is blocked. Run commands without sudo.
 
       GUARDRAILS REFERENCE:
@@ -220,6 +223,10 @@ const BLOCKED_COMMANDS = [
   "curl http://malicious",
   "/etc/shadow",
   "/etc/passwd",
+  // Prevent accessing other users' workspaces
+  "/home/ubuntu/workspace",
+  "ls /home/ubuntu",
+  "ls /home",
 ];
 
 const BLOCKED_PATTERNS = [
@@ -232,6 +239,8 @@ const BLOCKED_PATTERNS = [
   /python.*-c.*import\s+os.*system/,
   /\/home\/ubuntu\/nebuladen/,
   /\.\.\/.*nebuladen/,
+  /\/home\/ubuntu\/workspace(?!\/[a-f0-9-]{36}$)/, // block workspace root
+  /ls\s+\/home/, // block listing home directories
 ];
 
 function executeShell(command, workspaceDir) {
