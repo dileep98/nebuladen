@@ -1,24 +1,44 @@
 const si = require("systeminformation");
+const fs = require("fs");
+const path = require("path");
 
 const startTime = Date.now();
+const ACTIVITY_PATH = path.join(__dirname, "activity.json");
 
-// Activity log per user
-const activityLog = {};
+// Load activity from file
+function loadActivity() {
+  if (!fs.existsSync(ACTIVITY_PATH)) {
+    fs.writeFileSync(ACTIVITY_PATH, JSON.stringify({}));
+  }
+  try {
+    return JSON.parse(fs.readFileSync(ACTIVITY_PATH, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+// Save activity to file
+function saveActivity(activityLog) {
+  fs.writeFileSync(ACTIVITY_PATH, JSON.stringify(activityLog, null, 2));
+}
 
 function logActivity(userId, type, description) {
+  const activityLog = loadActivity();
   if (!activityLog[userId]) activityLog[userId] = [];
   activityLog[userId].unshift({
     type,
     description,
     timestamp: new Date().toISOString(),
   });
-  // Keep only last 20 activities
+  // Keep only last 20 activities per user
   if (activityLog[userId].length > 20) {
     activityLog[userId] = activityLog[userId].slice(0, 20);
   }
+  saveActivity(activityLog);
 }
 
 function getActivity(userId) {
+  const activityLog = loadActivity();
   return activityLog[userId] || [];
 }
 

@@ -1,4 +1,5 @@
 node_modules/
 logs/*.log
 db.json
+activity.json
 .env
