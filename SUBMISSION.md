@@ -153,6 +153,9 @@ Deliberately deferred: voice calls, multi-channel integrations (WhatsApp/Slack),
 
 ## Engineering Tradeoffs
 
+### Production isolation approach 
+In production, each user would get a Docker container with a completely isolated filesystem, resource limits (CPU/memory), and network policies. The current implementation uses per-user workspace directories on a shared EC2 instance — sufficient for demo purposes but not production-grade multi-tenancy. Docker would be the next step.
+
 ### Single EC2 vs Per-User EC2
 SkyKoi runs a dedicated t3.large per Koi. On free tier, running one EC2 per user is not feasible. Instead, each user gets a dedicated WebSocket session with isolated conversation history. In production, Docker containers would provide the same process isolation at lower cost than separate EC2 instances.
 
