@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: "18"
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: |
           cd backend
           npm install
@@ -30,10 +30,23 @@ jobs:
           cd backend
           npm audit --audit-level=high
 
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
           cd backend
           npm run test:coverage
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm install
+
+      - name: Frontend build check
+        run: |
+          cd frontend
+          npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://nebuladen.duckdns.org
+          NEXT_PUBLIC_WS_URL: wss://nebuladen.duckdns.org
 
   deploy:
     runs-on: ubuntu-latest
@@ -61,3 +74,41 @@ jobs:
               pm2 logs nebuladen-backend --lines 20
               exit 1
             fi
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Health check
+        run: |
+          echo "Running smoke tests against live backend..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://nebuladen.duckdns.org/health)
+          if [ "$STATUS" = "200" ]; then
+            echo "Health check passed!"
+          else
+            echo "Health check FAILED! Status: $STATUS"
+            exit 1
+          fi
+
+      - name: Metrics check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://nebuladen.duckdns.org/metrics)
+          if [ "$STATUS" = "200" ]; then
+            echo "Metrics endpoint passed!"
+          else
+            echo "Metrics endpoint FAILED! Status: $STATUS"
+            exit 1
+          fi
+
+      - name: Frontend check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://nebuladen.vercel.app)
+          if [ "$STATUS" = "200" ]; then
+            echo "Frontend check passed!"
+          else
+            echo "Frontend check FAILED! Status: $STATUS"
+            exit 1
+          fi
+
+      - name: All smoke tests passed
+        run: echo "All systems operational!"
