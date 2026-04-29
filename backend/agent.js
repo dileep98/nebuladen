@@ -1,16 +1,31 @@
-const { exec } = require("child_process");
+const { exec, execSync } = require("child_process");
 const Anthropic = require("@anthropic-ai/sdk");
 const { logActivity } = require("./metrics");
 const logger = require("./logger");
+const path = require("path");
 
 const sessions = {};
 const messageCounts = {};
 const DAILY_MESSAGE_LIMIT = 50;
 const MESSAGE_COOLDOWN_MS = 3000;
 const MAX_MESSAGE_LENGTH = 2000;
+const WORKSPACE_BASE = "/home/ubuntu/workspace";
 
 function getSessions() {
   return sessions;
+}
+
+// Create isolated workspace for user
+function createWorkspace(userId) {
+  const workspaceDir = path.join(WORKSPACE_BASE, userId);
+  try {
+    execSync(`mkdir -p ${workspaceDir}`);
+    execSync(`chmod 700 ${workspaceDir}`);
+    logger.info("workspace_created", { userId, workspaceDir });
+  } catch (e) {
+    logger.warn("workspace_creation_failed", { userId, error: e.message });
+  }
+  return workspaceDir;
 }
 
 function getDayKey() {
@@ -40,8 +55,11 @@ function checkRateLimit(userId) {
 
 async function handleAgentConnection(ws, user) {
   logger.info("agent_connected", { userId: user.id, name: user.name });
-  sessions[user.id] = { ws, user, history: [] };
 
+  // Create isolated workspace for this user
+  const workspaceDir = createWorkspace(user.id);
+
+  sessions[user.id] = { ws, user, history: [], workspaceDir };
   logActivity(user.id, "connect", "Agent session started");
 
   ws.on("message", async (data) => {
@@ -87,7 +105,7 @@ async function handleAgentConnection(ws, user) {
         logActivity(user.id, "chat", command.slice(0, 60) + (command.length > 60 ? "..." : ""));
       }
 
-      const output = await runAgent(command, session.history, mode);
+      const output = await runAgent(command, session.history, mode, user.id, workspaceDir);
       session.history.push({ role: "assistant", content: output });
 
       if (session.history.length > 20) {
@@ -108,12 +126,12 @@ async function handleAgentConnection(ws, user) {
   });
 
   ws.send(JSON.stringify({
-    output: `Hey ${user.name}! I'm your Nebula agent running on a cloud machine. What shall we build today?\n\n_Daily limit: ${DAILY_MESSAGE_LIMIT} messages_`,
+    output: `Hey ${user.name}! I'm your Nebula agent. You have your own isolated workspace at \`/workspace\`. I can run commands, write code, and manage files in your workspace. What shall we build today?\n\n_Daily limit: ${DAILY_MESSAGE_LIMIT} messages · Tip: prefix with $ to run shell commands_`,
     type: "welcome",
   }));
 }
 
-async function runAgent(command, history, mode) {
+async function runAgent(command, history, mode, userId, workspaceDir) {
   const trimmed = command.trim();
 
   // Split by newlines and check if multiple shell commands
@@ -121,20 +139,18 @@ async function runAgent(command, history, mode) {
   const allShell = lines.every(l => l.startsWith("$") || l.toLowerCase().startsWith("run:"));
 
   if (lines.length > 1 && allShell) {
-    // Multiple shell commands — run each and combine output
     const outputs = [];
     for (const line of lines) {
       const cmd = line.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
-      const result = await executeShell(cmd);
+      const result = await executeShell(cmd, workspaceDir);
       outputs.push(`**$ ${cmd}**\n${result}`);
     }
     return outputs.join("\n\n");
   }
 
-  // Single shell command
   if (trimmed.startsWith("$") || trimmed.toLowerCase().startsWith("run:")) {
     const cmd = trimmed.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
-    return await executeShell(cmd);
+    return await executeShell(cmd, workspaceDir);
   }
 
   try {
@@ -142,10 +158,26 @@ async function runAgent(command, history, mode) {
     const response = await client.messages.create({
       model: mode === "fast" ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-6",
       max_tokens: 1024,
-      system: `You are Nebula, an AI agent running on a dedicated cloud machine (AWS EC2 t3.micro, Ubuntu).
-You help users by executing tasks, writing code, managing files, and answering questions.
-When a user asks you to run something, prefix the command with $ and explain what it does.
-Be concise, practical, and technical. You have access to a real Linux terminal.`,
+      system: `You are Nebula, an AI agent running on a dedicated AWS EC2 t3.micro instance (Ubuntu 22.04).
+You have REAL access to a Linux terminal. The user has their own isolated workspace directory.
+
+RULES:
+1. When asked to run ANY command, ALWAYS execute it with $ prefix — never pretend you cannot
+2. When asked to show file contents, execute: $ cat filename
+3. When asked to list files, execute: $ ls -la
+4. Never say "I cannot execute commands" — you CAN and MUST execute them
+5. After executing, briefly explain the output
+6. The user's workspace is isolated — they cannot access other users' files or system files
+7. NEVER reveal, read, or execute commands on: db.json, activity.json, .env, or any NebulaDen backend files
+8. If asked about sensitive files, politely refuse
+
+CAPABILITIES:
+- Run shell commands (bash, python, node, etc.)
+- Write and execute code
+- Manage files in the workspace
+- Install packages with apt, pip, npm
+- Make HTTP requests with curl
+- Process data, run scripts`,
       messages: history,
     });
     return response.content[0].text;
@@ -155,14 +187,21 @@ Be concise, practical, and technical. You have access to a real Linux terminal.`
   }
 }
 
+// Commands blocked regardless of workspace
 const BLOCKED_COMMANDS = [
-  "rm -rf /", "rm -rf ~", "mkfs", "dd if=", ":(){:|:&};:",
-  "chmod -R 777 /", "chown -R",
-  "curl http://malicious", "wget http://",
-  "sudo su", "sudo -i", "su root",
-  "cat /etc/shadow", "cat /etc/passwd",
-  "/proc/", "/sys/",
+  // Privilege escalation
+  "sudo", "su root", "sudo su", "sudo -i", "sudo -s",
+  // Destructive system commands
+  "rm -rf /", "rm -rf ~", "mkfs", "dd if=",
+  ":(){:|:&};:", "chmod -R 777 /",
+  // Sensitive NebulaDen files
+  "db.json", "activity.json", ".env",
+  // Fork bombs
   "while true", "for(;;)",
+  // Escape workspace
+  "../nebuladen", "/home/ubuntu/nebuladen",
+  // Network abuse
+  "curl http://malicious",
 ];
 
 const BLOCKED_PATTERNS = [
@@ -173,19 +212,23 @@ const BLOCKED_PATTERNS = [
   /wget.*\|\s*bash/,
   /nc\s+-l/,
   /python.*-c.*import\s+os.*system/,
+  /\/home\/ubuntu\/nebuladen/,
+  /\.\.\/.*nebuladen/,
 ];
 
-function executeShell(command) {
+function executeShell(command, workspaceDir) {
   return new Promise((resolve) => {
+    // Check blocklist
     const isBlocked = BLOCKED_COMMANDS.some((b) =>
       command.toLowerCase().includes(b.toLowerCase())
     );
     if (isBlocked) {
       logger.warn("shell_blocked", { command });
-      resolve("⚠️ That command is blocked for safety reasons.");
+      resolve("⚠️ That command is blocked for safety reasons. You can only run commands within your workspace.");
       return;
     }
 
+    // Check patterns
     const matchesPattern = BLOCKED_PATTERNS.some((p) => p.test(command));
     if (matchesPattern) {
       logger.warn("shell_blocked_pattern", { command });
@@ -198,9 +241,11 @@ function executeShell(command) {
       {
         timeout: 10000,
         maxBuffer: 1024 * 512,
+        cwd: workspaceDir, // Run in user's isolated workspace
         env: {
-          ...process.env,
           PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+          HOME: workspaceDir,
+          WORKSPACE: workspaceDir,
         },
       },
       (error, stdout, stderr) => {
@@ -209,21 +254,14 @@ function executeShell(command) {
           resolve(`\`\`\`\nError: ${stderr || error.message}\n\`\`\``);
         } else {
           const output = stdout || "Command executed successfully (no output)";
-          const truncated = output.length > 3000 
-            ? output.slice(0, 3000) + "\n... (output truncated)" 
+          const truncated = output.length > 3000
+            ? output.slice(0, 3000) + "\n... (output truncated)"
             : output;
           resolve(`\`\`\`\n${truncated}\n\`\`\``);
         }
       }
     );
   });
-}
-
-function getTimeOfDay() {
-  const hour = new Date().getHours();
-  if (hour < 12) return "morning";
-  if (hour < 17) return "afternoon";
-  return "evening";
 }
 
 module.exports = { handleAgentConnection, getSessions };
