@@ -24,13 +24,13 @@ Check if backend is running:
 Check system metrics:
 
     curl https://nebuladen.duckdns.org/metrics
-    Expected: {"cpu":0,"memory":{...},"disk":{...},...}
+    Expected: {"cpu":0,"memory":{...},"disk":{...},"network":{...},...}
 
 ---
 
 ## SSH Access
 
-    ssh -i nebuladen-key.pem ubuntu@50.17.232.178
+    ssh -i nebuladen-key-v2.pem ubuntu@50.17.232.178
 
 ---
 
@@ -52,6 +52,10 @@ Check system metrics:
 
     cat ~/nebuladen/backend/logs/error.log
 
+### View backup logs
+
+    cat ~/backup.log
+
 ### Deploy latest code manually
 
     cd ~/nebuladen
@@ -64,6 +68,10 @@ Check system metrics:
 
     pm2 status
 
+### Check PM2 log rotation config
+
+    pm2 conf pm2-logrotate
+
 ### Check Nginx status
 
     sudo systemctl status nginx
@@ -74,30 +82,16 @@ Check system metrics:
 
 ---
 
-## Backup & Recovery
-
-### Database Backup
-- db.json is automatically backed up to S3 every 6 hours
-- Bucket: s3://nebuladen-backups-639163294452/db-backups/
-- S3 versioning enabled for additional protection
-
-### List available backups
-    aws s3 ls s3://nebuladen-backups-639163294452/db-backups/
-
-### Restore from backup
-    aws s3 cp s3://nebuladen-backups-639163294452/db-backups/db_YYYY-MM-DD_HH-MM-SS.json ~/nebuladen/backend/db.json
-    pm2 restart nebuladen-backend
-
----
-
 ## Deployment Pipeline
 
 Every push to main branch triggers:
-1. GitHub Actions SSH into EC2
-2. git pull origin main
-3. npm install
-4. pm2 restart nebuladen-backend
-5. Health check verification
+1. GitHub Actions runs automated tests (98% coverage)
+2. npm security audit (blocks on high/critical vulnerabilities)
+3. SSH into EC2
+4. git pull origin main
+5. npm install
+6. pm2 restart nebuladen-backend
+7. Health check verification — pipeline fails if backend does not respond 200
 
 ---
 
@@ -112,11 +106,49 @@ Every push to main branch triggers:
 
 ---
 
+## Backup & Recovery
+
+### Automatic Backups
+- db.json is automatically backed up to S3 every 6 hours via cron job
+- Bucket: s3://nebuladen-backups-639163294452/db-backups/
+- S3 versioning enabled for additional protection
+- Backup logs: ~/backup.log
+
+### List available backups
+
+    aws s3 ls s3://nebuladen-backups-639163294452/db-backups/
+
+### Restore from backup
+
+    aws s3 cp s3://nebuladen-backups-639163294452/db-backups/db_YYYY-MM-DD_HH-MM-SS.json ~/nebuladen/backend/db.json
+    pm2 restart nebuladen-backend
+
+### Manual backup
+
+    ~/backup.sh
+
+---
+
+## Log Management
+
+### PM2 Log Rotation (auto-configured)
+- Max log size: 10MB before rotating
+- Retention: 7 days
+- Compression: enabled
+- Schedule: daily at midnight UTC
+
+### Winston Application Logs
+- Combined logs: ~/nebuladen/backend/logs/combined.log
+- Error logs: ~/nebuladen/backend/logs/error.log
+- Format: JSON with timestamp, service, and metadata
+
+---
+
 ## Incident Response
 
 ### Backend is down
 1. Check UptimeRobot alert email
-2. SSH into EC2
+2. SSH into EC2: ssh -i nebuladen-key-v2.pem ubuntu@50.17.232.178
 3. Check PM2: pm2 status
 4. If stopped: pm2 restart nebuladen-backend
 5. Check logs: pm2 logs nebuladen-backend --lines 50
@@ -132,6 +164,12 @@ Every push to main branch triggers:
 2. Check running processes: top
 3. Check PM2 logs for errors: pm2 logs nebuladen-backend --lines 100
 
+### Disk space running low
+1. Check disk usage: df -h
+2. Check log sizes: du -sh ~/.pm2/logs/* ~/nebuladen/backend/logs/*
+3. Force log rotation: pm2 flush
+4. Clean old backups if needed: aws s3 ls s3://nebuladen-backups-639163294452/db-backups/
+
 ### SSL certificate expiry
 Certificate auto-renews via Certbot. To manually renew:
 
@@ -140,15 +178,22 @@ Certificate auto-renews via Certbot. To manually renew:
 
 Certificate expires: 2026-07-26
 
+### Data loss / restore needed
+1. List available backups: aws s3 ls s3://nebuladen-backups-639163294452/db-backups/
+2. Copy latest backup: aws s3 cp s3://nebuladen-backups-639163294452/db-backups/db_LATEST.json ~/nebuladen/backend/db.json
+3. Restart backend: pm2 restart nebuladen-backend
+
 ---
 
 ## Architecture
 
-    User → Vercel (Next.js) → EC2 t3.micro (Express + WebSocket) → Claude API
-                                        ↓
-                                  Nginx (SSL termination)
+    User → Vercel (Next.js) → EC2 t3.micro (Nginx → Express + WebSocket) → Claude API
                                         ↓
                                   PM2 (process management)
+                                        ↓
+                                  Winston (structured logging)
+                                        ↓
+                                  S3 (db.json backups every 6h)
 
 ---
 
@@ -173,4 +218,5 @@ Certificate expires: 2026-07-26
 |----------|-------|---------------|
 | EC2 t3.micro | 750 hrs/month | ~720 hrs |
 | EBS Storage | 30 GB | 8 GB |
+| S3 Storage | 5 GB | Minimal |
 | Data Transfer | 100 GB/month | Minimal |

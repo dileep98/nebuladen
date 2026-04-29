@@ -37,6 +37,12 @@ variable "allowed_ssh_cidr" {
   default     = "0.0.0.0/0"
 }
 
+variable "alert_email" {
+  description = "Email address for CloudWatch alerts"
+  type        = string
+  default     = "dtutika1998@outlook.com"
+}
+
 # Data source for latest Ubuntu 22.04 AMI
 data "aws_ami" "ubuntu" {
   most_recent = true
@@ -53,12 +59,72 @@ data "aws_ami" "ubuntu" {
   }
 }
 
+# IAM Role for EC2 to access S3
+resource "aws_iam_role" "nebuladen_ec2_role" {
+  name = "nebuladen-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "nebuladen-ec2-role"
+    Project     = "nebuladen"
+    Environment = "production"
+  }
+}
+
+# Attach S3 access policy to IAM role
+resource "aws_iam_role_policy_attachment" "s3_access" {
+  role       = aws_iam_role.nebuladen_ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}
+
+# IAM Instance Profile
+resource "aws_iam_instance_profile" "nebuladen_ec2_profile" {
+  name = "nebuladen-ec2-profile"
+  role = aws_iam_role.nebuladen_ec2_role.name
+
+  tags = {
+    Project     = "nebuladen"
+    Environment = "production"
+  }
+}
+
+# S3 Backup Bucket
+resource "aws_s3_bucket" "nebuladen_backups" {
+  bucket = "nebuladen-backups-639163294452"
+
+  tags = {
+    Name        = "nebuladen-backups"
+    Project     = "nebuladen"
+    Environment = "production"
+  }
+}
+
+# Enable versioning on backup bucket
+resource "aws_s3_bucket_versioning" "nebuladen_backups_versioning" {
+  bucket = aws_s3_bucket.nebuladen_backups.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
 # Security Group
 resource "aws_security_group" "nebuladen_sg" {
   name        = "nebuladen-sg"
   description = "NebulaDen agent security group"
 
-  # SSH
   ingress {
     from_port   = 22
     to_port     = 22
@@ -67,7 +133,6 @@ resource "aws_security_group" "nebuladen_sg" {
     description = "SSH access"
   }
 
-  # HTTP
   ingress {
     from_port   = 80
     to_port     = 80
@@ -76,7 +141,6 @@ resource "aws_security_group" "nebuladen_sg" {
     description = "HTTP traffic"
   }
 
-  # HTTPS
   ingress {
     from_port   = 443
     to_port     = 443
@@ -85,7 +149,6 @@ resource "aws_security_group" "nebuladen_sg" {
     description = "HTTPS traffic"
   }
 
-  # Backend API
   ingress {
     from_port   = 4000
     to_port     = 4000
@@ -94,7 +157,6 @@ resource "aws_security_group" "nebuladen_sg" {
     description = "NebulaDen backend API"
   }
 
-  # Allow all outbound
   egress {
     from_port   = 0
     to_port     = 0
@@ -116,14 +178,23 @@ resource "aws_instance" "nebuladen_agent" {
   instance_type          = var.instance_type
   key_name               = var.key_name
   vpc_security_group_ids = [aws_security_group.nebuladen_sg.id]
+  iam_instance_profile   = aws_iam_instance_profile.nebuladen_ec2_profile.name
 
   user_data = <<-EOF
     #!/bin/bash
     apt-get update -y
+    apt-get install -y unzip
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    ./aws/install
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
     apt-get install -y nodejs git nginx
     npm install -g pm2
     pm2 startup systemd -u ubuntu --hp /home/ubuntu
+    pm2 install pm2-logrotate
+    pm2 set pm2-logrotate:max_size 10M
+    pm2 set pm2-logrotate:retain 7
+    pm2 set pm2-logrotate:compress true
   EOF
 
   root_block_device {
@@ -149,6 +220,23 @@ resource "aws_eip" "nebuladen_eip" {
     Project     = "nebuladen"
     Environment = "production"
   }
+}
+
+# SNS Topic for alerts
+resource "aws_sns_topic" "nebuladen_alerts" {
+  name = "nebuladen-alerts"
+
+  tags = {
+    Project     = "nebuladen"
+    Environment = "production"
+  }
+}
+
+# SNS Email Subscription
+resource "aws_sns_topic_subscription" "email_alert" {
+  topic_arn = aws_sns_topic.nebuladen_alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
 }
 
 # CloudWatch CPU Alarm
@@ -200,23 +288,6 @@ resource "aws_cloudwatch_metric_alarm" "status_check" {
   }
 }
 
-# SNS Topic for alerts
-resource "aws_sns_topic" "nebuladen_alerts" {
-  name = "nebuladen-alerts"
-
-  tags = {
-    Project     = "nebuladen"
-    Environment = "production"
-  }
-}
-
-# SNS Email Subscription
-resource "aws_sns_topic_subscription" "email_alert" {
-  topic_arn = aws_sns_topic.nebuladen_alerts.arn
-  protocol  = "email"
-  endpoint  = "dtutika1998@outlook.com"
-}
-
 # Outputs
 output "instance_id" {
   description = "EC2 instance ID"
@@ -236,4 +307,9 @@ output "instance_type" {
 output "security_group_id" {
   description = "Security group ID"
   value       = aws_security_group.nebuladen_sg.id
+}
+
+output "backup_bucket" {
+  description = "S3 backup bucket name"
+  value       = aws_s3_bucket.nebuladen_backups.bucket
 }

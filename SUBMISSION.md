@@ -36,9 +36,11 @@ NebulaDen is an AI agent platform where each user gets a personal AI agent ("Neb
 - **Let's Encrypt SSL** — free HTTPS certificate with auto-renewal via Certbot
 - **Security Group** — ports 22 (SSH), 80 (HTTP), 443 (HTTPS), 4000 (backend) open
 - **PM2** — process manager keeping the backend alive and auto-restarting on crash or reboot
+- **IAM Role** — EC2 instance has S3 write access for automated backups
+- **S3 Bucket** — db.json backed up every 6 hours with versioning enabled
 
 ### CI/CD Pipeline
-- **GitHub Actions** — on every push to main, automatically SSHs into EC2, runs git pull + npm install + pm2 restart
+- **GitHub Actions** — on every push to main, runs tests, security audit, deploys to EC2, verifies health
 - **Health check verification** — pipeline fails and alerts if backend does not return 200 after deploy
 - Zero manual steps from code push to production
 
@@ -50,7 +52,7 @@ Completed in approximately 3 days of focused work:
 
 - **Day 1:** Research and reverse engineering SkyKoi, AWS account setup, EC2 provisioning, security groups, Elastic IP, project scaffolding, frontend pages (landing, auth, dashboard, chat)
 - **Day 2:** Backend (Express, JWT auth, WebSocket layer), agent system (Claude integration, shell execution), EC2 deployment, Nginx SSL configuration, CI/CD pipeline via GitHub Actions
-- **Day 3:** SRE hardening — structured logging (Winston), CloudWatch alarms, UptimeRobot monitoring, Helmet.js security headers, shell command sandboxing, Terraform IaC, Markdown rendering, operational documentation (RUNBOOK.md)
+- **Day 3:** SRE hardening — structured logging (Winston), CloudWatch alarms, UptimeRobot monitoring, Helmet.js security headers, shell command sandboxing, automated tests (98% coverage), S3 backups, PM2 log rotation, Terraform IaC, Markdown rendering, operational documentation (RUNBOOK.md)
 
 Finishing the core product early allowed extra time for SRE hardening that demonstrates production-readiness beyond the basic requirements.
 
@@ -74,10 +76,12 @@ Deliberately deferred: voice calls, multi-channel integrations (WhatsApp/Slack),
 - **AWS Elastic IP** — static IP for the backend
 - **AWS CloudWatch** — CPU and status check alarms
 - **AWS SNS** — alert notifications via email
+- **AWS S3** — automated db.json backups every 6 hours with versioning
+- **AWS IAM** — EC2 instance role for S3 access
 - **Nginx** — reverse proxy and SSL termination
-- **Let's Encrypt + Certbot** — free SSL certificate
-- **PM2** — Node.js process manager
-- **GitHub Actions** — CI/CD pipeline with health check verification
+- **Let's Encrypt + Certbot** — free SSL certificate with auto-renewal
+- **PM2** — Node.js process manager with log rotation
+- **GitHub Actions** — CI/CD pipeline with tests, security audit, and health check verification
 - **Vercel** — frontend hosting
 - **JWT + bcryptjs** — authentication
 - **Winston** — structured JSON logging
@@ -86,6 +90,7 @@ Deliberately deferred: voice calls, multi-channel integrations (WhatsApp/Slack),
 - **Terraform** — infrastructure as code (documents the full AWS setup reproducibly)
 - **DuckDNS** — free subdomain for SSL certificate
 - **react-markdown + remark-gfm** — markdown rendering in chat
+- **Jest + Supertest** — automated testing (98% code coverage)
 
 ---
 
@@ -123,7 +128,7 @@ Deliberately deferred: voice calls, multi-channel integrations (WhatsApp/Slack),
 ## What Was Straightforward
 - Next.js page routing and Tailwind styling
 - Express server and JWT auth setup
-- WebSocket connection between frontend and backend (locally)
+- WebSocket connection between frontend and backend locally
 - AWS security group configuration via CLI
 - PM2 process management and startup scripts
 - Let's Encrypt SSL certificate issuance
@@ -151,7 +156,7 @@ Deliberately deferred: voice calls, multi-channel integrations (WhatsApp/Slack),
 SkyKoi runs a dedicated t3.large per Koi. On free tier, running one EC2 per user is not feasible. Instead, each user gets a dedicated WebSocket session with isolated conversation history. In production, Docker containers would provide the same process isolation at lower cost than separate EC2 instances.
 
 ### File-based Storage vs DynamoDB
-db.json is simple and sufficient for MVP. It persists across restarts and requires zero AWS configuration. The migration path to DynamoDB is straightforward — replace the read/write functions in routes/auth.js with AWS SDK calls. This was a deliberate choice to keep the infrastructure simple while demonstrating the agent architecture.
+db.json is simple and sufficient for MVP. It persists across restarts, is backed up to S3 every 6 hours, and requires zero AWS configuration. The migration path to DynamoDB is straightforward — replace the read/write functions in routes/auth.js with AWS SDK calls. This was a deliberate choice to keep the infrastructure simple while demonstrating the agent architecture.
 
 ### claude-sonnet-4-6 vs claude-opus-4-6
 Sonnet is used by default (fast mode uses Haiku). Opus would give better reasoning but at higher cost and latency. The model is configurable per-request — a production system would route to Opus for complex tasks automatically.
@@ -161,7 +166,11 @@ Sonnet is used by default (fast mode uses Haiku). Opus would give better reasoni
 ## Improvements Over SkyKoi
 
 - **CI/CD pipeline with health verification** — auto-deploys on every push and fails the pipeline if the backend does not respond
-- **SRE observability** — structured JSON logging, real-time metrics endpoint, CloudWatch alarms, UptimeRobot monitoring — production-grade from day one
+- **Automated test suite** — 98% code coverage with Jest and Supertest, runs on every push
+- **npm security audit** — blocks deploys on high/critical vulnerabilities
+- **SRE observability** — structured JSON logging, real-time metrics endpoint, CloudWatch alarms, UptimeRobot monitoring
+- **Data resilience** — automated S3 backups every 6 hours with versioning and restore procedures
+- **PM2 log rotation** — prevents disk filling up in production
 - **Simpler onboarding** — no early access gate or waitlist, instant signup
 - **Infrastructure as Code** — full Terraform definition of all AWS resources for reproducible deployments
 - **Operational runbook** — documented incident response procedures
@@ -172,8 +181,8 @@ Sonnet is used by default (fast mode uses Haiku). Opus would give better reasoni
 
 ### Observability
 - Structured JSON logging with Winston — every request, WebSocket event, and error is logged with timestamp, metadata and severity
-- Real-time system metrics endpoint (/metrics) — CPU, RAM, disk, active sessions
-- Live dashboard showing agent resource usage
+- Real-time system metrics endpoint (/metrics) — CPU, RAM, disk, network I/O, active sessions
+- Live dashboard showing agent resource usage with progress bars
 
 ### Monitoring & Alerting
 - UptimeRobot monitors frontend and backend every 5 minutes
@@ -186,6 +195,7 @@ Sonnet is used by default (fast mode uses Haiku). Opus would give better reasoni
 - PM2 startup script ensures backend survives EC2 reboots
 - Graceful shutdown handles SIGTERM properly
 - Health check verification in CI/CD pipeline — deploy fails if backend does not respond
+- PM2 log rotation — 10MB max, 7 days retention, compressed
 
 ### Security
 - Helmet.js security headers on all HTTP responses
@@ -195,9 +205,21 @@ Sonnet is used by default (fast mode uses Haiku). Opus would give better reasoni
 - Shell command blocklist with regex pattern matching prevents dangerous operations
 - Daily message limit (50/day) prevents API abuse
 - SSH key rotation after accidental exposure
+- npm audit in CI blocks deploys on high/critical vulnerabilities
+
+### Data Resilience
+- db.json backed up to S3 every 6 hours via cron job
+- S3 bucket versioning enabled for point-in-time recovery
+- Restore procedure documented in RUNBOOK.md
+
+### Testing
+- 15 automated tests across auth, middleware, and health check
+- 98% code coverage (statements, branches, functions, lines)
+- Tests run in CI before every deploy
+- Deploy blocked if any test fails
 
 ### Operational Documentation
-- RUNBOOK.md with incident response procedures
+- RUNBOOK.md with incident response procedures for all common failure scenarios
 - Architecture documentation in SUBMISSION.md
 - CI/CD pipeline with automatic health verification
 
