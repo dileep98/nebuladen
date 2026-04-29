@@ -126,7 +126,7 @@ async function runAgent(command, history, mode) {
     for (const line of lines) {
       const cmd = line.replace(/^\$\s*/, "").replace(/^run:\s*/i, "");
       const result = await executeShell(cmd);
-      outputs.push(`$ ${cmd}\n${result}`);
+      outputs.push(`**$ ${cmd}**\n${result}`);
     }
     return outputs.join("\n\n");
   }
@@ -206,14 +206,13 @@ function executeShell(command) {
       (error, stdout, stderr) => {
         if (error) {
           logger.warn("shell_error", { command, error: error.message });
-          resolve(`Error:\n${stderr || error.message}`);
+          resolve(`\`\`\`\nError: ${stderr || error.message}\n\`\`\``);
         } else {
           const output = stdout || "Command executed successfully (no output)";
-          if (output.length > 3000) {
-            resolve(output.slice(0, 3000) + "\n... (output truncated)");
-          } else {
-            resolve(output);
-          }
+          const truncated = output.length > 3000 
+            ? output.slice(0, 3000) + "\n... (output truncated)" 
+            : output;
+          resolve(`\`\`\`\n${truncated}\n\`\`\``);
         }
       }
     );
