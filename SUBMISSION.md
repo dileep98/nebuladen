@@ -167,6 +167,33 @@ Sonnet is used by default (fast mode uses Haiku). Opus would give better reasoni
 
 ---
 
+## Known Issues & Limitations
+
+### Agent Hallucination
+The AI agent (Claude) occasionally hallucinates file paths and command outputs instead of 
+executing them in real-time. This is a known limitation of the current prompt engineering approach.
+
+**Root cause:** Claude sometimes generates plausible-looking outputs instead of using the 
+$ prefix to trigger real execution on the server.
+
+**Current mitigation:** 
+- System prompt explicitly instructs Claude to always use $ prefix
+- $ prefix commands are intercepted by the backend and executed on EC2
+- Users can always force real execution by prefixing commands with $
+
+**Production fix:**
+- Implement a tool-use/function-calling architecture where Claude calls predefined 
+  tools (execute_shell, read_file, write_file) instead of generating raw commands
+- This removes ambiguity — Claude either calls the tool or it doesn't
+- Anthropic's tool-use API would be the correct implementation here
+- Additional prompt tuning and few-shot examples would improve consistency
+
+**Timeline constraint:** With a strict deadline, prompt engineering was prioritized 
+over a full tool-use refactor. The core architecture is sound — the agent execution 
+layer works correctly when $ prefix is used.
+
+---
+
 ## Improvements Over SkyKoi
 
 - **CI/CD pipeline with health verification** — auto-deploys on every push and fails the pipeline if the backend does not respond
