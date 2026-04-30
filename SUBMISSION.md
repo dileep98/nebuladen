@@ -192,6 +192,14 @@ $ prefix to trigger real execution on the server.
 over a full tool-use refactor. The core architecture is sound — the agent execution 
 layer works correctly when $ prefix is used.
 
+### Chat History Persistence
+Chat messages are not persisted between page refreshes. History is stored 
+in React state (frontend) and in-memory session (backend).
+
+**Production fix:** Store conversation history in DynamoDB per user, 
+load on reconnect. This is a deliberate MVP tradeoff — the core 
+agent architecture is the focus, not chat persistence.
+
 ---
 
 ## Improvements Over SkyKoi
